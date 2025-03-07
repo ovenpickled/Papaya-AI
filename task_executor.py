@@ -9,6 +9,11 @@ import win32con
 import win32gui
 import win32process
 import re
+import requests
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 class TaskExecutor:
     def __init__(self):
@@ -61,10 +66,19 @@ class TaskExecutor:
                 
                 return self.set_alarm(hour, minute)
         
-        # Check weather
-        elif "weather" in task_description:
-            location_match = re.search(r"weather\s+(?:in|for|at)\s+(.*?)(?:\s+|$)", task_description)
-            location = location_match.group(1) if location_match else "current location"
+        # Check weather - improved pattern matching
+        elif "weather" in task_description or "forecast" in task_description:
+            location_match = re.search(r"(?:weather|forecast)\s+(?:in|for|at|of)\s+(.*?)(?:\s+|$)", task_description)
+            if location_match:
+                location = location_match.group(1).strip()
+            else:
+                # Try to find any location mentioned in the query
+                location_match = re.search(r"(?:weather|forecast).*?([\w\s]+)$", task_description)
+                if location_match:
+                    location = location_match.group(1).strip()
+                else:
+                    location = "current location"
+            
             return self.check_weather(location)
             
         return f"I'm not sure how to perform this task: {task_description}"
@@ -81,7 +95,7 @@ class TaskExecutor:
             "edge": "msedge.exe",
             "firefox": r"C:\Program Files\Mozilla Firefox\firefox.exe",
             "explorer": "explorer.exe",
-            "settings": "explorer.exe ms-settings:",
+            "settings": "ms-settings:",
         }
         
         # Try to find the application in our dictionary
@@ -259,10 +273,78 @@ class TaskExecutor:
         return f"Alarm set for {formatted_time}. The alarm will sound at that time."
     
     def check_weather(self, location):
-        """Check weather for a location by opening a weather website"""
+        """Check weather for a location using Open-Meteo API"""
         try:
-            url = f"https://www.weather.com/weather/today/l/{location.replace(' ', '+')}"
-            subprocess.Popen(["explorer", url])
-            return f"Checking weather for {location}"
+            # Handle "current location" by using a default city
+            if location.lower() == "current location":
+                location = "New York"  # Default location
+                
+            print(f"Checking weather for: {location}")
+            
+            # First, we need to geocode the location to get coordinates
+            geocoding_url = f"https://geocoding-api.open-meteo.com/v1/search?name={location}&count=1"
+            geo_response = requests.get(geocoding_url)
+            
+            if geo_response.status_code != 200 or not geo_response.json().get("results"):
+                return f"I couldn't find the location '{location}'. Please check the spelling or try a different location."
+            
+            # Extract coordinates
+            geo_data = geo_response.json()["results"][0]
+            latitude = geo_data["latitude"]
+            longitude = geo_data["longitude"]
+            city_name = geo_data["name"]
+            country = geo_data.get("country", "")
+            
+            print(f"Found location: {city_name}, {country} at {latitude}, {longitude}")
+            
+            # Get weather data
+            weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&timezone=auto"
+            weather_response = requests.get(weather_url)
+            
+            if weather_response.status_code == 200:
+                data = weather_response.json()
+                current = data["current"]
+                
+                # Map weather code to description
+                weather_codes = {
+                    0: "Clear sky",
+                    1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+                    45: "Fog", 48: "Depositing rime fog",
+                    51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+                    61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+                    71: "Slight snow fall", 73: "Moderate snow fall", 75: "Heavy snow fall",
+                    77: "Snow grains",
+                    80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+                    85: "Slight snow showers", 86: "Heavy snow showers",
+                    95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail"
+                }
+                
+                weather_description = weather_codes.get(current["weather_code"], "Unknown")
+                
+                # Format the weather information
+                weather_info = (
+                    f"Current weather in {city_name}, {country}:\n"
+                    f"• Temperature: {current['temperature_2m']}°C (feels like {current['apparent_temperature']}°C)\n"
+                    f"• Condition: {weather_description}\n"
+                    f"• Humidity: {current['relative_humidity_2m']}%\n"
+                    f"• Wind speed: {current['wind_speed_10m']} km/h\n"
+                    f"• Precipitation: {current['precipitation']} mm"
+                )
+                
+                print(f"Weather data: {weather_info}")
+                
+                # Display the weather information in a message box
+                win32api.MessageBox(
+                    0,
+                    weather_info,
+                    f"Weather for {city_name}",
+                    win32con.MB_OK | win32con.MB_ICONINFORMATION
+                )
+                
+                return f"The current weather in {city_name} is {current['temperature_2m']}°C with {weather_description.lower()}."
+            else:
+                print(f"Error from weather API: {weather_response.status_code}")
+                return f"Sorry, I couldn't get the weather data. Please try again later."
         except Exception as e:
-            return f"Failed to check weather: {str(e)}"
+            print(f"Error checking weather: {e}")
+            return f"I encountered an error while checking the weather for {location}."

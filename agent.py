@@ -18,7 +18,8 @@ class Agent:
         
         # Direct command patterns
         direct_commands = [
-            "open", "switch", "set alarm", "set a alarm", "set an alarm", "weather"
+            "open", "switch", "set alarm", "set a alarm", "set an alarm", 
+            "weather", "check weather", "forecast"
         ]
         
         # Check if this is a direct command
@@ -38,6 +39,26 @@ class Agent:
             try:
                 # For non-direct commands, use NLP processing
                 nlp_result = self.nlp_processor.process_query(query)
+                print(f"NLP result: {nlp_result}")
+                
+                # Check if the result looks like JSON
+                if nlp_result and (nlp_result.startswith('{') or nlp_result.startswith('[')):
+                    try:
+                        # Try to parse it as JSON
+                        parsed_result = json.loads(nlp_result)
+                        
+                        # If it has intent and entities, try to execute the task
+                        if 'intent' in parsed_result:
+                            intent = parsed_result.get('intent')
+                            
+                            # Handle weather intent
+                            if intent == 'check_weather' and 'entities' in parsed_result:
+                                location = parsed_result['entities'].get('location', 'current location')
+                                task_result = self.task_executor.check_weather(location)
+                                self.tts.speak(task_result)
+                                return task_result
+                    except json.JSONDecodeError:
+                        print("Failed to parse NLP result as JSON")
                 
                 # Generate a natural language response
                 response = self.nlp_processor.generate_response(nlp_result)
