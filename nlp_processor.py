@@ -29,6 +29,10 @@ class NLPProcessor:
     def generate_response(self, task_result):
         """Generate a natural language response based on the task execution result"""
         try:
+            # If task_result is already a string, just return it
+            if isinstance(task_result, str):
+                return task_result
+                
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
