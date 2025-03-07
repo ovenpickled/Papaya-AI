@@ -11,6 +11,8 @@ import win32process
 import re
 import requests
 from dotenv import load_dotenv
+from payment_service import StripePaymentService
+import re
 
 # Load environment variables
 load_dotenv()
@@ -18,6 +20,7 @@ load_dotenv()
 class TaskExecutor:
     def __init__(self):
         self.shell = win32com.client.Dispatch("WScript.Shell")
+        self.payment_service = StripePaymentService()
     
     def execute_task(self, task_description):
         """Execute a task based on the description"""
@@ -81,6 +84,17 @@ class TaskExecutor:
             
             return self.check_weather(location)
             
+        # return f"I'm not sure how to perform this task: {task_description}"
+    
+        # Add payment processing
+        elif any(keyword in task_description for keyword in ["pay", "payment", "charge", "send money"]):
+        
+            return self.process_payment(task_description)
+        
+        # Check payment status
+        elif "payment status" in task_description or "check payment" in task_description:
+            return self.check_payment_status(task_description)
+                
         return f"I'm not sure how to perform this task: {task_description}"
     
     def open_application(self, app_name):
@@ -348,3 +362,84 @@ class TaskExecutor:
         except Exception as e:
             print(f"Error checking weather: {e}")
             return f"I encountered an error while checking the weather for {location}."
+        
+    def process_payment(self, task_description):
+        """Process a payment based on voice command"""
+        # Extract amount
+        amount_match = re.search(r"(\$?\d+(?:\.\d{1,2})?)", task_description)
+        if not amount_match:
+            return "I couldn't determine the payment amount. Please specify an amount like $10 or 25 dollars."
+        
+        amount_str = amount_match.group(1).replace("$", "")
+        # Convert to cents for Stripe
+        amount_cents = int(float(amount_str) * 100)
+        
+        # Extract description if available
+        description_match = re.search(r"for\s+([\w\s]+)(?:$|\.)", task_description)
+        description = description_match.group(1) if description_match else "Voice payment"
+        
+        # Create payment intent
+        result = self.payment_service.create_payment_intent(
+            amount=amount_cents,
+            description=description
+        )
+        
+        if result["success"]:
+            payment_id = result["id"]
+            client_secret = result["client_secret"]
+            
+            # In a real application, you would now:
+            # 1. Store the payment_id for later reference
+            # 2. Redirect to a payment form or display a QR code
+            # 3. Use the client_secret with Stripe Elements or Checkout
+            
+            # For demo purposes, we'll just show a message box
+            win32api.MessageBox(
+                0,
+                f"Payment of ${amount_str} initiated.\nPayment ID: {payment_id}\n\nIn a real app, this would open a payment form.",
+                "Payment Initiated",
+                win32con.MB_OK | win32con.MB_ICONINFORMATION
+            )
+            
+            return f"I've initiated a payment for ${amount_str}. In a real application, you would now complete this payment through a secure form."
+        else:
+            win32api.MessageBox(
+                0,
+                f"Payment failed: {result['error']}",
+                "Payment Failed",
+                win32con.MB_OK | win32con.MB_ICONERROR
+            )
+            
+            return f"Sorry, I couldn't process the payment: {result['error']}"
+
+    def check_payment_status(self, task_description):
+        """Check the status of a payment"""
+        # Extract payment ID
+        id_match = re.search(r"payment\s+(?:id\s+)?([a-zA-Z0-9_]+)", task_description)
+        if not id_match:
+            return "Please provide a payment ID to check its status."
+        
+        payment_id = id_match.group(1)
+        result = self.payment_service.retrieve_payment_intent(payment_id)
+        
+        if result["success"]:
+            status = result["status"]
+            amount = result["amount"] / 100  # Convert cents to dollars
+            
+            win32api.MessageBox(
+                0,
+                f"Payment Status: {status}\nAmount: ${amount}",
+                "Payment Status",
+                win32con.MB_OK | win32con.MB_ICONINFORMATION
+            )
+            
+            return f"The payment with ID {payment_id} has a status of {status}."
+        else:
+            win32api.MessageBox(
+                0,
+                f"Failed to retrieve payment status: {result['error']}",
+                "Status Check Failed",
+                win32con.MB_OK | win32con.MB_ICONERROR
+            )
+            
+            return f"Sorry, I couldn't check the payment status: {result['error']}"

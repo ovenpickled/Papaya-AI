@@ -13,28 +13,59 @@ class Agent:
     
     def process_query(self, query):
         """Process a user query and execute the appropriate task"""
-        # Check for direct commands that should bypass NLP processing
+        # Check for approval or rejection commands first
         lower_query = query.lower()
-        
-        # Direct command patterns
+    
+        if lower_query.startswith("approve ") or lower_query == "approve":
+            try:
+                # Extract task ID if present
+                parts = lower_query.split()
+                task_id = int(parts[1]) if len(parts) > 1 else 1
+                task_result = self.task_executor.approve_task(task_id)
+                self.tts.speak(task_result)
+                return task_result
+            except (IndexError, ValueError):
+                response = "Please specify a valid task ID to approve."
+                self.tts.speak(response)
+                return response
+    
+        if lower_query.startswith("reject ") or lower_query == "reject":
+            try:
+            # Extract task ID if present
+                parts = lower_query.split()
+                task_id = int(parts[1]) if len(parts) > 1 else 1
+                task_result = self.task_executor.reject_task(task_id)
+                self.tts.speak(task_result)
+                return task_result
+            except (IndexError, ValueError):
+                response = "Please specify a valid task ID to reject."
+                self.tts.speak(response)
+                return response
+    
+    # Rest of your existing code for direct commands and NLP processing
+    # Direct command patterns
         direct_commands = [
-            "open", "switch", "set alarm", "set a alarm", "set an alarm", 
-            "weather", "check weather", "forecast"
-        ]
-        
-        # Check if this is a direct command
+        "open", "switch", "set alarm", "set a alarm", "set an alarm", 
+        "weather", "check weather", "forecast", "send money", "transfer", 
+        "pay", "payment", "transaction", "balance", "transactions", "history"
+    ]
+    
+    # Check if this is a direct command
         is_direct_command = any(command in lower_query for command in direct_commands)
-        
+    
         if is_direct_command:
-            # Execute the task directly
+        # Execute the task directly
             print(f"Executing direct command: {query}")
             task_result = self.task_executor.execute_task(query)
-            
-            # Speak the response
+        
+        # Speak the response
             self.tts.speak(task_result)
-            
+        
             return task_result
         else:
+        # Your existing NLP processing code
+
+    
             # Use NLP to understand the query
             try:
                 # For non-direct commands, use NLP processing
@@ -60,10 +91,10 @@ class Agent:
                     except json.JSONDecodeError:
                         print("Failed to parse NLP result as JSON")
                 
-                # Generate a natural language response
+                    # Generate a natural language response
                 response = self.nlp_processor.generate_response(nlp_result)
                 
-                # Speak the response
+                    # Speak the response
                 self.tts.speak(response)
                 
                 return response
